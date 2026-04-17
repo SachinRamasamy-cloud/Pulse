@@ -238,7 +238,20 @@ export default function Dashboard() {
         )}
       </div>
 
-      {showModal && <AddServerModal onClose={() => setShowModal(false)} onAdded={(s) => setServers((p) => [s, ...p])} />}
+      {showModal && (
+        <AddServerModal
+          onClose={() => setShowModal(false)}
+          onAdded={(s, importedCount = 1) => {
+            // Provider API can import multiple servers in one request.
+            // Reload full list to avoid showing only the first imported server.
+            if (importedCount > 1) {
+              fetchServers();
+              return;
+            }
+            if (s) setServers((p) => [s, ...p]);
+          }}
+        />
+      )}
     </div>
   );
 }

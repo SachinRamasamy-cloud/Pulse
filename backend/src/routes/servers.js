@@ -114,6 +114,10 @@ router.post('/', async (req, res) => {
       if (!cleanProvider || !cleanKey)
         return res.status(400).json({ error: 'Provider and API key are required.' });
 
+      if (cleanProvider !== 'hetzner') {
+        return res.status(400).json({ error: 'Only Hetzner provider API is supported right now.' });
+      }
+
       // Validate key before saving
       if (cleanProvider === 'hetzner') {
         const v = await validateHetznerKey(cleanKey);
@@ -121,11 +125,75 @@ router.post('/', async (req, res) => {
           return res.status(400).json({ error: `Hetzner API key invalid: ${v.error}` });
       }
 
-      serverData.provider      = cleanProvider;
-      serverData.providerApiKey = cleanKey;
-      // BUG FIX #3: Mark this as the "group parent" with isOnline null
-      // Real child servers get created in setImmediate below
-      serverData.providerServerId = null; // will be null for the group entry
+      // Import provider servers synchronously so the frontend gets real server IDs
+      // (avoids returning temporary records with null providerServerId).
+      const hServers = await listHetznerServers(cleanKey);
+      if (!hServers.length) {
+        return res.status(400).json({ error: 'No servers found in this Hetzner account.' });
+      }
+
+      const imported = [];
+      let skippedDueToConflict = 0;
+      for (const hs of hServers) {
+        try {
+          const serverDoc = await Server.findOneAndUpdate(
+            {
+              userId: req.user._id,
+              provider: cleanProvider,
+              providerServerId: hs.providerServerId,
+            },
+            {
+              $set: {
+                name:           hs.name,
+                connectionType: 'api',
+                provider:       cleanProvider,
+                providerApiKey: cleanKey, // select:false — safe
+                providerServerId: hs.providerServerId,
+                ip:             hs.ip,
+                isOnline:       hs.isOnline,
+                specs:          hs.specs,
+                lastChecked:    new Date(),
+                geoCache: {
+                  country: hs.country,
+                  city:    hs.datacenter,
+                },
+                tags:  sanitiseTags(tags),
+                notes: sanitise(notes, 500),
+              },
+              $setOnInsert: {
+                userId: req.user._id,
+              },
+            },
+            { upsert: true, new: true, runValidators: true }
+          );
+
+          imported.push(serverDoc);
+        } catch (e) {
+          if (e?.code === 11000) {
+            skippedDueToConflict += 1;
+            continue;
+          }
+          throw e;
+        }
+      }
+
+      if (!imported.length) {
+        if (skippedDueToConflict > 0) {
+          return res.status(409).json({
+            error: 'Provider servers were found, but all conflicted with existing server IPs. Remove duplicates and retry.',
+          });
+        }
+        return res.status(500).json({ error: 'No provider servers could be imported.' });
+      }
+
+      // Return first imported server for backward compatibility with current frontend.
+      // Also include count so UI can optionally show "X servers imported".
+      return res.status(201).json({
+        server: imported[0],
+        importedCount: imported.length,
+        skippedCount: skippedDueToConflict,
+        importedServerIds: imported.map((s) => s._id),
+      });
     }
 
     const server = await Server.create(serverData);
@@ -156,46 +224,6 @@ router.post('/', async (req, res) => {
           if (geo) await cache.set(`geo:${server.ip}`, geo, 600);
         } catch (e) {
           console.error('auto-probe error:', e.message);
-        }
-      });
-    }
-
-    // ── BUG FIX #3: Hetzner API — auto-import child servers ───────────────
-    if (API_TYPES.includes(connectionType) && serverData.provider === 'hetzner') {
-      const parentId = server._id;
-      setImmediate(async () => {
-        try {
-          const hServers = await listHetznerServers(serverData.providerApiKey);
-          for (const hs of hServers) {
-            const existing = await Server.findOne({
-              userId: req.user._id,
-              providerServerId: hs.providerServerId,
-            });
-            if (existing) continue;
-
-            await Server.create({
-              userId:           req.user._id,
-              name:             hs.name,
-              connectionType:   'api',
-              provider:         serverData.provider,
-              providerApiKey:   serverData.providerApiKey, // select:false — safe
-              providerServerId: hs.providerServerId,       // BUG FIX #3: set properly
-              ip:               hs.ip,
-              isOnline:         hs.isOnline,
-              specs:            hs.specs,
-              lastChecked:      new Date(),
-              geoCache: {
-                country: hs.country,
-                city:    hs.datacenter,
-              },
-            });
-          }
-          // Delete the "group" parent if children were imported
-          if (hServers.length > 0) {
-            await Server.findByIdAndDelete(parentId);
-          }
-        } catch (e) {
-          console.error('Hetzner auto-import error:', e.message);
         }
       });
     }

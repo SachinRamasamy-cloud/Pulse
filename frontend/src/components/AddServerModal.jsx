@@ -44,9 +44,6 @@ const METHODS = [
 
 const PROVIDERS = [
   { id: 'hetzner',      label: 'Hetzner',       docs: 'https://docs.hetzner.com/cloud/api/getting-started/generating-api-token/' },
-  { id: 'digitalocean', label: 'DigitalOcean',   docs: 'https://docs.digitalocean.com/reference/api/create-personal-access-token/' },
-  { id: 'vultr',        label: 'Vultr',          docs: 'https://www.vultr.com/api/#section/Authentication' },
-  { id: 'linode',       label: 'Akamai/Linode',  docs: 'https://www.linode.com/docs/products/tools/api/guides/manage-api-tokens/' },
 ];
 
 export default function AddServerModal({ onClose, onAdded }) {
@@ -107,7 +104,7 @@ export default function AddServerModal({ onClose, onAdded }) {
         ...(method === 'api'    && { provider: form.provider, providerApiKey: form.providerApiKey }),
       };
       const { data } = await serverAPI.create(payload);
-      onAdded(data.server);
+      onAdded(data.server, data.importedCount || 1, data.skippedCount || 0);
       onClose();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to add server.');
