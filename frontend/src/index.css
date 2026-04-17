@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: #070d1b;
+    color: #e2e8f0;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track  { background: #0c1425; }
+  ::-webkit-scrollbar-thumb  { background: #253761; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #00e5a0; }
+
+  ::selection { background: rgba(0, 229, 160, 0.25); color: #fff; }
+}
+
+@layer components {
+  /* ── Card ─────────────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-base-800 border border-base-600 rounded-xl shadow-card;
+  }
+  .card-hover {
+    @apply card transition-all duration-200 hover:border-base-400 hover:shadow-neon-sm;
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg font-ui font-medium
+           text-sm transition-all duration-200 cursor-pointer select-none;
+  }
+  .btn-primary {
+    @apply btn bg-neon text-base-950 hover:bg-neon-dim shadow-neon-sm
+           hover:shadow-neon-md active:scale-95;
+  }
+  .btn-outline {
+    @apply btn border border-base-500 text-slate-300 hover:border-neon hover:text-neon
+           hover:bg-neon-glow active:scale-95;
+  }
+  .btn-ghost {
+    @apply btn text-slate-400 hover:text-slate-200 hover:bg-base-700 active:scale-95;
+  }
+  .btn-danger {
+    @apply btn bg-red-500/10 border border-red-500/30 text-red-400
+           hover:bg-red-500/20 hover:border-red-500/50 active:scale-95;
+  }
+  .btn-pro {
+    @apply btn bg-pro text-white hover:bg-purple-600 shadow-pro-sm active:scale-95;
+  }
+
+  /* ── Form inputs ─────────────────────────────────────────────────────── */
+  .input {
+    @apply w-full bg-base-900 border border-base-500 rounded-lg px-4 py-2.5
+           text-slate-200 placeholder-slate-600 font-ui text-sm
+           focus:outline-none focus:border-neon focus:ring-1 focus:ring-neon/30
+           transition-colors duration-200;
+  }
+  .label {
+    @apply block text-xs font-mono font-medium text-slate-400 mb-1.5 uppercase tracking-widest;
+  }
+
+  /* ── Badges ─────────────────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium;
+  }
+  .badge-online  { @apply badge bg-cyan-500/10 text-cyan-400 border border-cyan-500/20; }
+  .badge-offline { @apply badge bg-red-500/10  text-red-400  border border-red-500/20;  }
+  .badge-pro     { @apply badge bg-pro/15 text-pro-light border border-pro/30; }
+  .badge-free    { @apply badge bg-base-700 text-slate-400 border border-base-500; }
+
+  /* ── Mono data text ──────────────────────────────────────────────────── */
+  .mono { @apply font-mono text-neon; }
+
+  /* ── Shimmer skeleton ────────────────────────────────────────────────── */
+  .skeleton {
+    @apply rounded animate-shimmer bg-gradient-to-r
+           from-base-800 via-base-600 to-base-800 bg-[length:800px_100%];
+  }
+
+  /* ── Section divider ─────────────────────────────────────────────────── */
+  .divider {
+    @apply border-t border-base-600 my-6;
+  }
+
+  /* ── Pro gate blur overlay ───────────────────────────────────────────── */
+  .pro-blur {
+    @apply relative overflow-hidden;
+  }
+  .pro-blur::after {
+    content: '';
+    @apply absolute inset-0 backdrop-blur-sm bg-base-900/60;
+  }
+}
+
+/* ── Background grid ────────────────────────────────────────────────────────── */
+.bg-grid {
+  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+  background-size: 32px 32px;
+}
+
+/* ── Neon text glow ─────────────────────────────────────────────────────────── */
+.text-glow {
+  text-shadow: 0 0 20px rgba(0, 229, 160, 0.5), 0 0 40px rgba(0, 229, 160, 0.2);
+}
+.text-pro-glow {
+  text-shadow: 0 0 20px rgba(124, 58, 237, 0.6), 0 0 40px rgba(124, 58, 237, 0.3);
+}
+
+/* ── Scan line animation ─────────────────────────────────────────────────────── */
+.scan-container {
+  position: relative;
+  overflow: hidden;
+}
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0,229,160,0.6), transparent);
+  animation: scan 3s linear infinite;
+}
