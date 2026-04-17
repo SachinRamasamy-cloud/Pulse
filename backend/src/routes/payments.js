@@ -17,6 +17,9 @@ const PLAN_NAMES = {
   proplus: 'PulseBoard Pro Plus',
 };
 
+const CLIENT_BASE_URL = (process.env.CLIENT_URL || '').replace(/\/+$/, '');
+const clientRoute = (path) => `${CLIENT_BASE_URL}/#${path.startsWith('/') ? path : `/${path}`}`;
+
 const parseConfiguredPrice = (raw) => (raw || '').toString().split('#')[0].trim();
 
 function buildLineItem(plan, configuredPrice) {
@@ -116,8 +119,8 @@ router.post('/checkout', protect, async (req, res) => {
       customer: customerId,
       mode: 'subscription',
       line_items: [lineItem],
-      success_url: `${process.env.CLIENT_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:  `${process.env.CLIENT_URL}/pricing`,
+      success_url: clientRoute('/success?session_id={CHECKOUT_SESSION_ID}'),
+      cancel_url:  clientRoute('/pricing'),
       allow_promotion_codes: true,
       client_reference_id: req.user._id.toString(),
       metadata: { userId: req.user._id.toString(), plan },
@@ -137,7 +140,7 @@ router.post('/portal', protect, async (req, res) => {
     if (!req.user.stripeCustomerId) return res.status(400).json({ error: 'No billing account.' });
     const session = await stripe.billingPortal.sessions.create({
       customer:   req.user.stripeCustomerId,
-      return_url: `${process.env.CLIENT_URL}/dashboard`,
+      return_url: clientRoute('/dashboard'),
     });
     res.json({ url: session.url });
   } catch (err) {
