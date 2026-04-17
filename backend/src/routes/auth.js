@@ -58,6 +58,10 @@ router.post('/register', async (req, res) => {
 });
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
+router.get('/login', (_req, res) => {
+  res.status(405).json({ error: 'Method not allowed. Use POST /api/auth/login.' });
+});
+
 router.post('/login', async (req, res) => {
   try {
     const email    = sanitise(req.body.email).toLowerCase();

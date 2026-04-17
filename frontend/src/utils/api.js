@@ -1,6 +1,15 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const buildBaseUrl = () => {
+  const raw = (import.meta.env.VITE_API_URL || '').trim();
+  if (!raw) return '/api';
+
+  const normalized = raw.replace(/\/+$/, '');
+  if (normalized.endsWith('/api')) return normalized;
+  return `${normalized}/api`;
+};
+
+const BASE_URL = buildBaseUrl();
 
 const api = axios.create({ baseURL: BASE_URL, timeout: 30000 });
 
@@ -45,6 +54,10 @@ export const paymentAPI = {
   checkout:       (plan)      => api.post('/payments/checkout', { plan }),
   portal:         ()          => api.post('/payments/portal'),
   confirmSession: (sessionId) => api.post('/payments/confirm-session', { sessionId }),
+};
+
+export const systemAPI = {
+  health: () => api.get('/health'),
 };
 
 export default api;

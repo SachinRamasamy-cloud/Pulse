@@ -85,6 +85,9 @@ app.use('/api/agent',    agentRoutes);
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'PulseBoard API', env: process.env.NODE_ENV });
 });
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'PulseBoard API', env: process.env.NODE_ENV });
+});
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found.' }));
