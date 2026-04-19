@@ -1,6 +1,7 @@
 import express from 'express';
 import Server from '../models/Server.js';
 import ServerSnapshot from '../models/ServerSnapshot.js';
+import { canonicaliseIp } from '../utils/fieldCrypto.js';
 
 const router = express.Router();
 
@@ -35,6 +36,13 @@ router.post('/report', async (req, res) => {
 
   // Validate numeric fields to prevent injection
   const safeNum = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+  const getRequestIp = () => {
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff.trim()) {
+      return xff.split(',')[0]?.trim() || null;
+    }
+    return req.ip || null;
+  };
 
   server.metrics = {
     cpuPercent:    safeNum(cpuPercent),
@@ -63,6 +71,14 @@ router.post('/report', async (req, res) => {
       cpuCores: safeNum(specs.cpuCores),
       arch:     safeStr(specs.arch, 20),
     };
+  }
+
+  // If agent server was created without an IP, capture it from the first report.
+  if (!server.getIp()) {
+    const reportedIp = canonicaliseIp(getRequestIp());
+    if (reportedIp) {
+      server.ip = reportedIp;
+    }
   }
 
   server.isOnline       = true;

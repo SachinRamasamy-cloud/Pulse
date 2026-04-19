@@ -140,11 +140,11 @@ export default function ServerDetail() {
   const isCustom = server.connectionType === 'custom';
   const hasMetrics = server.metrics?.updatedAt;
 
-  // Tabs: overview always; setup for agent/docker; probe for custom/agent
+  // Tabs: overview always; setup for agent/docker; probe for all server types
   const tabs = [
     { id: 'overview',  label: 'Overview' },
     ...(isAgent ? [{ id: 'setup', label: 'Agent Setup' }] : []),
-    ...(isCustom || isAgent ? [{ id: 'probe', label: 'Port Scan & SSL' }] : []),
+    { id: 'probe', label: 'Port Scan & SSL' },
     { id: 'uptime', label: 'Uptime' },
   ];
 
@@ -343,7 +343,7 @@ export default function ServerDetail() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════
-            TAB: PORT SCAN & SSL  (custom + agent only)
+            TAB: PORT SCAN & SSL
         ═══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'probe' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">

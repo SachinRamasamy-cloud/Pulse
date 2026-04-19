@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { canonicaliseIp, encryptText, hashDeterministic } from '../utils/fieldCrypto.js';
 
 // ── Security constants ────────────────────────────────────────────────────────
 const SALT_ROUNDS = 14; // bcrypt cost factor — ~300ms on modern hardware, brute-force resistant
@@ -31,7 +32,8 @@ const userSchema = new mongoose.Schema(
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil:           { type: Date,   default: null },
     lastLoginAt:         { type: Date,   default: null },
-    lastLoginIp:         { type: String, default: null },
+    lastLoginIp:         { type: String, default: null, select: false },
+    lastLoginIpHash:     { type: String, default: null, select: false },
     passwordChangedAt:   { type: Date,   default: null },
   },
   { timestamps: true }
@@ -88,10 +90,12 @@ userSchema.methods.recordFailedLogin = async function () {
 };
 
 userSchema.methods.recordSuccessfulLogin = async function (ip) {
+  const cleanIp = canonicaliseIp(ip);
   this.failedLoginAttempts = 0;
   this.lockUntil           = null;
   this.lastLoginAt         = new Date();
-  this.lastLoginIp         = ip;
+  this.lastLoginIp         = cleanIp ? encryptText(cleanIp) : null;
+  this.lastLoginIpHash     = cleanIp ? hashDeterministic(cleanIp, 'login-ip') : null;
   await this.save({ validateModifiedOnly: true });
 };
 

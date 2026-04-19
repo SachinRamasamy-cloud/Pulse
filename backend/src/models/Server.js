@@ -1,5 +1,12 @@
 import mongoose from 'mongoose';
 import crypto from 'crypto';
+import {
+  canonicaliseIp,
+  decryptText,
+  encryptText,
+  hashDeterministic,
+  isEncryptedPayload,
+} from '../utils/fieldCrypto.js';
 
 const serverSchema = new mongoose.Schema(
   {
@@ -17,7 +24,8 @@ const serverSchema = new mongoose.Schema(
     },
 
     // ── Custom / agent IP ──────────────────────────────────────────────────────
-    ip: { type: String, trim: true, default: null },
+    ip: { type: String, trim: true, default: null, select: false },
+    ipHash: { type: String, default: null, select: false },
 
     // ── Provider API (Pro Plus) ───────────────────────────────────────────────
     provider: {
@@ -79,9 +87,35 @@ const serverSchema = new mongoose.Schema(
 );
 
 // ── Unique IP per user ─────────────────────────────────────────────────────────
-serverSchema.index({ userId: 1, ip: 1 }, { unique: true, sparse: true });
+serverSchema.index({ userId: 1, ipHash: 1 }, { unique: true, sparse: true });
 // Fast agent token lookup by hash
 serverSchema.index({ agentTokenHash: 1 }, { sparse: true });
+
+serverSchema.pre('save', function (next) {
+  const model = this.constructor;
+
+  if (this.isModified('ip')) {
+    const plain = model.getReadableIp(this.ip);
+    if (!plain) {
+      this.ip = null;
+      this.ipHash = null;
+    } else {
+      this.ip = encryptText(plain);
+      this.ipHash = model.hashIp(plain);
+    }
+  } else if (this.ip && !this.ipHash) {
+    const plain = model.getReadableIp(this.ip);
+    this.ipHash = plain ? model.hashIp(plain) : null;
+  }
+
+  if (this.isModified('providerApiKey') && this.providerApiKey) {
+    this.providerApiKey = isEncryptedPayload(this.providerApiKey)
+      ? this.providerApiKey
+      : encryptText(this.providerApiKey);
+  }
+
+  next();
+});
 
 // ── Generate secure agent token ───────────────────────────────────────────────
 serverSchema.statics.generateAgentToken = () =>
@@ -90,5 +124,46 @@ serverSchema.statics.generateAgentToken = () =>
 // ── Hash agent token for DB lookup ────────────────────────────────────────────
 serverSchema.statics.hashToken = (token) =>
   crypto.createHash('sha256').update(token).digest('hex');
+
+serverSchema.statics.hashIp = (ip) => {
+  const cleanIp = canonicaliseIp(ip);
+  return cleanIp ? hashDeterministic(cleanIp, 'server-ip') : null;
+};
+
+serverSchema.statics.getReadableIp = (value) => {
+  const candidate = decryptText(value);
+  return canonicaliseIp(candidate);
+};
+
+serverSchema.statics.secureIpFields = (ip) => {
+  const cleanIp = canonicaliseIp(ip);
+  if (!cleanIp) return { ip: null, ipHash: null };
+  return { ip: encryptText(cleanIp), ipHash: hashDeterministic(cleanIp, 'server-ip') };
+};
+
+serverSchema.statics.secureSecret = (value) => {
+  if (!value) return null;
+  return isEncryptedPayload(value) ? value : encryptText(value);
+};
+
+serverSchema.statics.toPublicServer = (serverDocOrLean) => {
+  if (!serverDocOrLean) return null;
+  const data = typeof serverDocOrLean.toObject === 'function'
+    ? serverDocOrLean.toObject()
+    : { ...serverDocOrLean };
+
+  data.ip = decryptText(data.ip);
+  data.ip = canonicaliseIp(data.ip);
+  delete data.ipHash;
+  return data;
+};
+
+serverSchema.methods.getIp = function () {
+  return this.constructor.getReadableIp(this.ip);
+};
+
+serverSchema.methods.getProviderApiKey = function () {
+  return decryptText(this.providerApiKey);
+};
 
 export default mongoose.model('Server', serverSchema);

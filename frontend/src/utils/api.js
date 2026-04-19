@@ -57,7 +57,7 @@ export const paymentAPI = {
 };
 
 export const systemAPI = {
-  health: () => api.get('/health'),
+  health: (config = {}) => api.get('/health', config),
 };
 
 export default api;

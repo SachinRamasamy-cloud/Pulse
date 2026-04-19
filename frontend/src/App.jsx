@@ -10,6 +10,7 @@ import Pricing      from './pages/Pricing';
 import Success      from './pages/Success';
 import Navbar       from './components/Navbar';
 import LoadingSpinner from './components/LoadingSpinner';
+import BackendWakeGate from './components/BackendWakeGate';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -50,10 +51,12 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <HashRouter>
-        <AppRoutes />
-      </HashRouter>
-    </AuthProvider>
+    <BackendWakeGate>
+      <AuthProvider>
+        <HashRouter>
+          <AppRoutes />
+        </HashRouter>
+      </AuthProvider>
+    </BackendWakeGate>
   );
 }

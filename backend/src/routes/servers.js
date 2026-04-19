@@ -31,6 +31,7 @@ router.get('/', async (req, res) => {
   try {
     // NOTE: agentToken + providerApiKey have select:false — safe to return list
     const servers = await Server.find({ userId: req.user._id })
+      .select('+ip')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -47,7 +48,7 @@ router.get('/', async (req, res) => {
       return s;
     });
 
-    res.json({ servers: patched });
+    res.json({ servers: patched.map((s) => Server.toPublicServer(s)) });
   } catch {
     res.status(500).json({ error: 'Failed to fetch servers.' });
   }
@@ -136,6 +137,7 @@ router.post('/', async (req, res) => {
       let skippedDueToConflict = 0;
       for (const hs of hServers) {
         try {
+          const secureIp = Server.secureIpFields(hs.ip);
           const serverDoc = await Server.findOneAndUpdate(
             {
               userId: req.user._id,
@@ -147,9 +149,10 @@ router.post('/', async (req, res) => {
                 name:           hs.name,
                 connectionType: 'api',
                 provider:       cleanProvider,
-                providerApiKey: cleanKey, // select:false — safe
+                providerApiKey: Server.secureSecret(cleanKey), // select:false — safe
                 providerServerId: hs.providerServerId,
-                ip:             hs.ip,
+                ip:             secureIp.ip,
+                ipHash:         secureIp.ipHash,
                 isOnline:       hs.isOnline,
                 specs:          hs.specs,
                 lastChecked:    new Date(),
@@ -165,7 +168,7 @@ router.post('/', async (req, res) => {
               },
             },
             { upsert: true, new: true, runValidators: true }
-          );
+          ).select('+ip');
 
           imported.push(serverDoc);
         } catch (e) {
@@ -189,7 +192,7 @@ router.post('/', async (req, res) => {
       // Return first imported server for backward compatibility with current frontend.
       // Also include count so UI can optionally show "X servers imported".
       return res.status(201).json({
-        server: imported[0],
+        server: Server.toPublicServer(imported[0]),
         importedCount: imported.length,
         skippedCount: skippedDueToConflict,
         importedServerIds: imported.map((s) => s._id),
@@ -199,11 +202,12 @@ router.post('/', async (req, res) => {
     const server = await Server.create(serverData);
 
     // ── BUG FIX #6: Auto-probe without touching rate-limit key ────────────
-    if (connectionType === 'custom' && server.ip) {
+    const serverIp = server.getIp();
+    if (connectionType === 'custom' && serverIp) {
       setImmediate(async () => {
         try {
-          const reach = await checkReachability(server.ip);
-          const geo   = await fetchIpInfo(server.ip);
+          const reach = await checkReachability(serverIp);
+          const geo   = await fetchIpInfo(serverIp);
           const update = {
             isOnline:    reach.online,
             pingMs:      reach.pingMs,
@@ -221,14 +225,14 @@ router.post('/', async (req, res) => {
             checkedAt: new Date(),
           });
           // Cache geo but do NOT set rate limit key — auto-probe is free
-          if (geo) await cache.set(`geo:${server.ip}`, geo, 600);
+          if (geo) await cache.set(`geo:${serverIp}`, geo, 600);
         } catch (e) {
           console.error('auto-probe error:', e.message);
         }
       });
     }
 
-    res.status(201).json({ server });
+    res.status(201).json({ server: Server.toPublicServer(server) });
   } catch (err) {
     if (err.code === 11000)
       return res.status(409).json({ error: 'A server with this IP already exists.' });
@@ -240,7 +244,9 @@ router.post('/', async (req, res) => {
 // ── GET /api/servers/:id ──────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
-    const server = await Server.findOne({ _id: req.params.id, userId: req.user._id }).lean();
+    const server = await Server.findOne({ _id: req.params.id, userId: req.user._id })
+      .select('+ip')
+      .lean();
     if (!server) return res.status(404).json({ error: 'Server not found.' });
 
     // BUG FIX #8: patch isOnline for agent servers
@@ -251,7 +257,7 @@ router.get('/:id', async (req, res) => {
       }
     }
 
-    res.json({ server });
+    res.json({ server: Server.toPublicServer(server) });
   } catch {
     res.status(500).json({ error: 'Failed to fetch server.' });
   }
@@ -268,9 +274,9 @@ router.put('/:id', async (req, res) => {
         notes: sanitise(req.body.notes, 500),
       },
       { new: true, runValidators: true }
-    );
+    ).select('+ip');
     if (!server) return res.status(404).json({ error: 'Server not found.' });
-    res.json({ server });
+    res.json({ server: Server.toPublicServer(server) });
   } catch {
     res.status(500).json({ error: 'Failed to update server.' });
   }
@@ -294,7 +300,7 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/refresh', async (req, res) => {
   try {
     const server = await Server.findOne({ _id: req.params.id, userId: req.user._id })
-      .select('+providerApiKey'); // explicitly include for refresh use
+      .select('+providerApiKey +ip'); // explicitly include for refresh use
 
     if (!server) return res.status(404).json({ error: 'Server not found.' });
 
@@ -305,10 +311,13 @@ router.post('/:id/refresh', async (req, res) => {
 
     // ── Custom IP ──────────────────────────────────────────────────────────
     if (server.connectionType === 'custom') {
-      const reach = await checkReachability(server.ip);
-      const geoKey = `geo:${server.ip}`;
+      const serverIp = server.getIp();
+      if (!serverIp) return res.status(400).json({ error: 'No IP address for this server.' });
+
+      const reach = await checkReachability(serverIp);
+      const geoKey = `geo:${serverIp}`;
       let geo = await cache.get(geoKey);
-      if (!geo) { geo = await fetchIpInfo(server.ip); if (geo) await cache.set(geoKey, geo, 600); }
+      if (!geo) { geo = await fetchIpInfo(serverIp); if (geo) await cache.set(geoKey, geo, 600); }
 
       server.isOnline    = reach.online;
       server.pingMs      = reach.pingMs;
@@ -325,8 +334,12 @@ router.post('/:id/refresh', async (req, res) => {
       if (!server.providerServerId) {
         return res.status(400).json({ error: 'Server has no provider ID. It may still be importing.' });
       }
-      const hs      = await getHetznerServer(server.providerApiKey, server.providerServerId);
-      const metrics = await getHetznerMetrics(server.providerApiKey, server.providerServerId);
+      const providerKey = server.getProviderApiKey();
+      if (!providerKey) {
+        return res.status(400).json({ error: 'Provider API key is missing or unreadable.' });
+      }
+      const hs      = await getHetznerServer(providerKey, server.providerServerId);
+      const metrics = await getHetznerMetrics(providerKey, server.providerServerId);
 
       server.isOnline    = hs.isOnline;
       server.lastChecked = new Date();
@@ -364,8 +377,8 @@ router.post('/:id/refresh', async (req, res) => {
     }
 
     // Re-fetch to return clean doc without select:false fields
-    const fresh = await Server.findById(server._id).lean();
-    res.json({ server: fresh });
+    const fresh = await Server.findById(server._id).select('+ip').lean();
+    res.json({ server: Server.toPublicServer(fresh) });
   } catch (err) {
     console.error('refresh error:', err);
     res.status(500).json({ error: 'Failed to refresh.' });
@@ -397,13 +410,13 @@ router.get('/:id/agent-setup', requirePro, async (req, res) => {
 // ── GET /api/servers/:id/pro-stats ────────────────────────────────────────────
 router.get('/:id/pro-stats', requirePro, async (req, res) => {
   try {
-    const server = await Server.findOne({ _id: req.params.id, userId: req.user._id });
+    const server = await Server.findOne({ _id: req.params.id, userId: req.user._id }).select('+ip');
     if (!server) return res.status(404).json({ error: 'Server not found.' });
 
-    if (!['custom', 'agent', 'docker'].includes(server.connectionType))
+    if (!['custom', 'agent', 'docker', 'api'].includes(server.connectionType))
       return res.json({ ports: [], http: null, ssl: null });
 
-    const ip = server.ip;
+    const ip = server.getIp();
     if (!ip) return res.status(400).json({ error: 'No IP address for this server.' });
 
     const cacheKey = `pro:${req.params.id}`;
